@@ -4,5 +4,9 @@ out/
 *.log
 *.tsbuildinfo
 .env*
-!.env.example
+API_SCOPE.md
+WORK_SUMMARY.md
 dont_forget.txt
+__pycache__/
+*.py[cod]
+.pytest_cache/
