@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { AlertTriangle, Check, Inbox, X } from "lucide-react";
 
 export function Badge({ children, tone = "neutral" }: { children: React.ReactNode; tone?: "success" | "warning" | "danger" | "info" | "neutral" | "primary" }) {
-  return <span className={`badge badge-${tone}`}>{children}</span>;
+  return <span className={`badge badge-${tone}`} data-slot="badge">{children}</span>;
 }
 
 export function Modal({ open, onClose, title, description, children, footer, large = false }: {
@@ -25,7 +25,7 @@ export function Modal({ open, onClose, title, description, children, footer, lar
   if (!open) return null;
   return (
     <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section className={`dialog ${large ? "dialog-lg" : ""}`} role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+      <section className={`dialog ${large ? "dialog-lg" : ""}`} role="dialog" aria-modal="true" aria-labelledby="dialog-title" data-slot="dialog">
         <header className="dialog-header">
           <div><h2 id="dialog-title">{title}</h2>{description && <p>{description}</p>}</div>
           <button className="close-btn" onClick={onClose} aria-label="Close dialog"><X /></button>
@@ -54,7 +54,7 @@ export function Drawer({ open, onClose, title, description, children, footer }: 
   if (!open) return null;
   return (
     <div className="drawer-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section className="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+      <section className="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" data-slot="drawer">
         <header className="dialog-header">
           <div><h2 id="drawer-title">{title}</h2>{description && <p>{description}</p>}</div>
           <button className="close-btn" onClick={onClose} aria-label="Close drawer"><X /></button>
@@ -96,7 +96,7 @@ export function StatusBadge({ status }: { status: string }) {
 
 export function PageHeader({ eyebrow, title, description, actions }: { eyebrow: string; title: string; description: string; actions?: React.ReactNode }) {
   return (
-    <header className="page-header">
+    <header className="page-header" data-slot="page-header">
       <div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p className="page-subtitle">{description}</p></div>
       {actions && <div className="page-actions">{actions}</div>}
     </header>
@@ -104,5 +104,5 @@ export function PageHeader({ eyebrow, title, description, actions }: { eyebrow: 
 }
 
 export function StatCard({ icon, value, label, trend }: { icon: React.ReactNode; value: string | number; label: string; trend?: string }) {
-  return <div className="card stat-card"><div className="stat-icon">{icon}</div><div><strong>{value}</strong><span>{label}</span></div>{trend && <div className="trend">{trend}</div>}</div>;
+  return <div className="card stat-card" data-slot="metric-card"><div className="stat-card-head"><span>{label}</span><div className="stat-icon">{icon}</div></div><strong className="stat-value">{value}</strong>{trend && <div className="trend">{trend}</div>}</div>;
 }

@@ -58,17 +58,20 @@ export default function RegisterPage() {
   };
 
   return (
-    <main className="login-page">
-      <section className="login-panel">
-        <div className="login-brand">
+    <main className="auth-page">
+      <div className="auth-shell register-auth-shell">
+        <Link href="/login" className="auth-brand" aria-label="Helix Lab sign in">
           <div className="brand-mark" />
           <div><div className="brand-name">Helix Lab</div><span className="brand-sub" style={{ color: "var(--muted)" }}>Laboratory OS</span></div>
-        </div>
-        <div className="login-card register-card">
-          <p className="eyebrow">Join the workspace</p>
-          <h1>Create your account</h1>
-          <p className="page-subtitle">Set up secure access to your laboratory workspace.</p>
-          <form className="login-form" onSubmit={createAccount} noValidate>
+        </Link>
+        <section className="auth-card register-auth-card">
+          <div className="auth-form-panel">
+            <div className="auth-copy">
+              <p className="eyebrow">Join the workspace</p>
+              <h1>Create your account</h1>
+              <p className="page-subtitle">Set up secure access to your laboratory workspace.</p>
+            </div>
+            <form className="login-form" onSubmit={createAccount} noValidate>
             {error && <div className="alert alert-danger" role="alert"><AlertCircle /><div><strong>Unable to create account</strong><p>{error}</p></div></div>}
             <div className="form-grid auth-form-grid">
               <div className="field">
@@ -109,13 +112,15 @@ export default function RegisterPage() {
             <button className="btn btn-primary" style={{ width: "100%", minHeight: 46 }} disabled={submitting || sessionLoading}>
               {submitting ? <><LoaderCircle className="spin" /> Creating account…</> : <>Create account <ArrowRight /></>}
             </button>
-          </form>
-          <p className="auth-switch">Already have an account? <Link className="link" href="/login">Sign in</Link></p>
-        </div>
-      </section>
-      <aside className="login-visual">
-        <div className="visual-content"><div className="visual-kicker"><FlaskConical size={15} /> Molecular Biotechnology Lab</div><h2>Start with secure,<br />connected science.</h2><p>Create your account to bring experiments, samples, instruments, and scientific insight into one workspace.</p><div className="auth-benefit"><ShieldCheck /><div><strong>Role-based access</strong><span>Your account starts with only the permissions assigned to your selected role.</span></div></div></div>
-      </aside>
+            </form>
+            <p className="auth-switch">Already have an account? <Link className="link" href="/login">Sign in</Link></p>
+          </div>
+          <aside className="auth-visual">
+            <div className="visual-content"><div className="visual-kicker"><FlaskConical size={15} /> Molecular Biotechnology Lab</div><h2>Start with secure,<br />connected science.</h2><p>Create your account to bring experiments, samples, instruments, and scientific insight into one workspace.</p><div className="auth-benefit"><ShieldCheck /><div><strong>Role-based access</strong><span>Your account starts with only the permissions assigned to your selected role.</span></div></div></div>
+          </aside>
+        </section>
+        <p className="auth-footnote">Secure laboratory workspace · Role-based access</p>
+      </div>
     </main>
   );
 }
