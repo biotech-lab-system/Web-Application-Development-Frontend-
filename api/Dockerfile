@@ -6,12 +6,18 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends fonts-noto-core \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt ./requirements.txt
 RUN pip install --upgrade pip && pip install -r requirements.txt \
     && addgroup --system appgroup \
     && adduser --system --ingroup appgroup appuser
 
 COPY app ./app
+
+RUN mkdir -p /data/ai-uploads && chown -R appuser:appgroup /data/ai-uploads
 
 USER appuser
 EXPOSE 8000

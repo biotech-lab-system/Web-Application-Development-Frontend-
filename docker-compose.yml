@@ -48,11 +48,17 @@ services:
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-this-development-secret}
       JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:-60}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:3001}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.6-flash}
+      AI_UPLOAD_DIR: /data/ai-uploads
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
       SEED_ADMIN_USERNAME: ${SEED_ADMIN_USERNAME:-admin}
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@helixlab.io}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-Admin123!}
     ports:
       - "${API_PORT:-8000}:8000"
+    volumes:
+      - helixlab_ai_uploads:/data/ai-uploads
     depends_on:
       db:
         condition: service_healthy
@@ -68,6 +74,7 @@ services:
 
 volumes:
   helixlab_pgdata:
+  helixlab_ai_uploads:
 
 networks:
   helixlab:

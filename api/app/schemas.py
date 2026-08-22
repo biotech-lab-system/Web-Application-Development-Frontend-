@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -154,3 +155,33 @@ class UserOut(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+
+
+class AIConversationCreateIn(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=180)
+    experiment_id: str | None = Field(default=None, max_length=32)
+
+
+class AIConversationUpdateIn(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=180)
+    experiment_id: str | None = Field(default=None, max_length=32)
+
+
+class ReportCreateIn(BaseModel):
+    report_type: Literal["experiment_summary", "sample_inventory", "quality_control"]
+    format: Literal["pdf", "xlsx"]
+    language: Literal["th", "en"] = "en"
+    title: str | None = Field(default=None, min_length=1, max_length=180)
+    experiment_id: str | None = Field(default=None, max_length=32)
+    sample_ids: list[str] = Field(default_factory=list, max_length=100)
+    date_from: date | None = None
+    date_to: date | None = None
+    include_ai: bool = True
+
+    @model_validator(mode="after")
+    def validate_report_scope(self) -> "ReportCreateIn":
+        if self.report_type == "experiment_summary" and not self.experiment_id:
+            raise ValueError("experiment_id is required for experiment_summary")
+        if self.date_from and self.date_to and self.date_from > self.date_to:
+            raise ValueError("date_from must be before or equal to date_to")
+        return self

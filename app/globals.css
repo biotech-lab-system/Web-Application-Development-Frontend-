@@ -264,6 +264,7 @@ h3 { font-size: 13px; font-weight: 610; }
 .alert { padding: 10px 12px; display: flex; align-items: flex-start; gap: 9px; border: 1px solid; border-radius: 8px; font-size: 11px; }
 .alert svg { width: 16px; flex: 0 0 auto; margin-top: 1px; }
 .alert-warning { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 24%, var(--line)); background: var(--warning-soft); }
+.alert-success { color: var(--success); border-color: color-mix(in srgb, var(--success) 24%, var(--line)); background: var(--success-soft); }
 .alert-danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 24%, var(--line)); background: var(--danger-soft); }
 .alert-info { color: var(--info); border-color: color-mix(in srgb, var(--info) 24%, var(--line)); background: var(--info-soft); }
 .alert strong { color: currentColor; }
@@ -367,10 +368,18 @@ h3 { font-size: 13px; font-weight: 610; }
 .message-bubble p { margin-bottom: 6px; }
 .message-bubble p:last-child { margin-bottom: 0; }
 .message-avatar { width: 28px; height: 28px; flex: 0 0 auto; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--primary); }
+.attachment-list { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 5px; }
+.attachment-chip { max-width: 100%; min-height: 24px; padding: 3px 7px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--muted); font-size: 9.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.message.user .attachment-chip { color: var(--primary-foreground); border-color: color-mix(in srgb, var(--primary-foreground) 35%, transparent); background: color-mix(in srgb, var(--primary-foreground) 10%, transparent); }
+.attachment-chip svg { width: 12px; height: 12px; flex: 0 0 auto; }
+.attachment-chip button { width: 18px; height: 18px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 4px; color: inherit; background: transparent; cursor: pointer; }
+.attachment-chip button:hover { background: var(--surface-3); }
+.compose-attachments { margin: 0 0 7px; }
 .chat-compose { padding: 11px 15px; border-top: 1px solid var(--line); }
 .compose-box { display: flex; align-items: flex-end; gap: 8px; padding: 6px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
 .compose-box textarea { flex: 1; min-height: 38px; max-height: 125px; padding: 8px; resize: none; border: 0; outline: 0; background: transparent; color: var(--ink); }
 .analysis-panel { padding: 15px; border-left: 1px solid var(--line); overflow: auto; }
+.report-template.active { border-color: color-mix(in srgb, var(--primary) 48%, var(--line)); background: var(--primary-soft); box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 10%, transparent); }
 .finding { padding: 9px; margin-top: 7px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); }
 .finding strong { font-size: 11px; }
 .finding p { margin: 3px 0 0; color: var(--muted); font-size: 10px; }
