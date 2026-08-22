@@ -11,18 +11,27 @@ import {
 import { useAuth } from "@/components/auth-provider";
 import { notifications } from "@/data/mock";
 
-const navigation = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/samples", label: "Samples", icon: TestTubes },
-  { href: "/sample-tracking", label: "Sample Tracking", icon: Search },
-  { href: "/experiments", label: "Experiments", icon: FlaskConical },
-  { href: "/equipment", label: "Equipment Booking", icon: Microscope },
-  { href: "/lab-notebook", label: "Lab Notebook", icon: BookOpenText },
-  { href: "/ai-assistant", label: "AI Assistant", icon: Bot },
-  { href: "/reports", label: "Reports", icon: Beaker },
-  { href: "/archive", label: "Archive", icon: Archive },
-  { href: "/settings", label: "Settings", icon: Settings },
+const navigationSections = [
+  { label: "Workspace", items: [
+    { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { href: "/samples", label: "Samples", icon: TestTubes },
+    { href: "/experiments", label: "Experiments", icon: FlaskConical },
+  ] },
+  { label: "Operations", items: [
+    { href: "/sample-tracking", label: "Sample Tracking", icon: Search },
+    { href: "/equipment", label: "Equipment Booking", icon: Microscope },
+    { href: "/lab-notebook", label: "Lab Notebook", icon: BookOpenText },
+  ] },
+  { label: "Intelligence", items: [
+    { href: "/ai-assistant", label: "AI Assistant", icon: Bot },
+    { href: "/reports", label: "Reports", icon: Beaker },
+  ] },
+  { label: "System", items: [
+    { href: "/archive", label: "Archive", icon: Archive },
+    { href: "/settings", label: "Settings", icon: Settings },
+  ] },
 ];
+const navigation = navigationSections.flatMap((section) => section.items);
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -76,13 +85,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="brand">
           <div className="brand-mark" aria-hidden="true" />
           <div className="brand-copy"><div className="brand-name">Helix Lab</div><span className="brand-sub">Laboratory OS</span></div>
-          <button className="close-btn mobile-only" style={{ marginLeft: "auto", color: "#dcebef", background: "rgba(255,255,255,.08)" }} onClick={() => setMobileOpen(false)} aria-label="Close menu"><X /></button>
+          <button className="close-btn sidebar-close mobile-only" onClick={() => setMobileOpen(false)} aria-label="Close menu"><X /></button>
         </div>
         <nav className="side-nav" aria-label="Main navigation">
-          {navigation.map((item) => {
-            const active = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(`${item.href}/`));
-            return <Link key={item.href} href={item.href} className={`nav-link ${active ? "active" : ""}`} onClick={() => setMobileOpen(false)} title={collapsed ? item.label : undefined}><item.icon /><span className="nav-label">{item.label}</span></Link>;
-          })}
+          {navigationSections.map((section) => <div className="nav-section" key={section.label}>
+            <div className="nav-section-label">{section.label}</div>
+            {section.items.map((item) => {
+              const active = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(`${item.href}/`));
+              return <Link key={item.href} href={item.href} className={`nav-link ${active ? "active" : ""}`} onClick={() => setMobileOpen(false)} title={collapsed ? item.label : undefined}><item.icon /><span className="nav-label">{item.label}</span></Link>;
+            })}
+          </div>)}
         </nav>
         <div className="sidebar-bottom">
           <div className="sidebar-profile"><div className="avatar">{initials}</div><div className="profile-copy"><strong>{displayName}</strong><span>{user?.email}</span><em className="role-chip">{user?.role}</em></div></div>
@@ -94,8 +106,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <header className="topbar">
           <button className="icon-btn desktop-collapse" onClick={() => setCollapsed(!collapsed)} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}>{collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}</button>
           <button className="icon-btn mobile-only" onClick={() => setMobileOpen(true)} aria-label="Open navigation"><Menu /></button>
+          <span className="header-separator" aria-hidden="true" />
           <div className="topbar-left"><div className="breadcrumb"><small>Molecular Biotechnology Lab</small><strong>{current?.label ?? "Workspace"}</strong></div></div>
-          <form className="global-search" onSubmit={submitSearch}><Search /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search samples, experiments…" aria-label="Global search" /></form>
+          <form className="global-search" onSubmit={submitSearch}><Search /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search samples, experiments…" aria-label="Global search" /><kbd>/</kbd></form>
           <div className="topbar-right">
             <select className="lab-select" aria-label="Laboratory selector" defaultValue="molecular"><option value="molecular">Molecular Biotechnology Lab</option><option value="genomics">Genomics Core Lab</option></select>
             <div className="relative" ref={noticeRef}>
