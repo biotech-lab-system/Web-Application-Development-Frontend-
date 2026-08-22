@@ -8,6 +8,7 @@ import {
   LogOut, Menu, Microscope, Moon, PanelLeftClose, PanelLeftOpen, Search, Settings,
   Sun, TestTubes, UserRound, X,
 } from "lucide-react";
+import { useAuth } from "@/components/auth-provider";
 import { notifications } from "@/data/mock";
 
 const navigation = [
@@ -26,6 +27,7 @@ const navigation = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { logout, user } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [dark, setDark] = useState(false);
@@ -33,6 +35,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [profileOpen, setProfileOpen] = useState(false);
   const [search, setSearch] = useState("");
   const noticeRef = useRef<HTMLDivElement>(null);
+  const displayName = user?.display_name || user?.username || "User";
+  const initials = displayName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
 
   useEffect(() => {
     const saved = localStorage.getItem("helix-theme") === "dark";
@@ -60,6 +64,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     event.preventDefault();
     if (search.trim()) router.push(`/samples?q=${encodeURIComponent(search.trim())}`);
   };
+  const signOut = async () => {
+    await logout();
+    router.replace("/login");
+  };
 
   return (
     <div className="app-shell">
@@ -77,8 +85,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           })}
         </nav>
         <div className="sidebar-bottom">
-          <div className="sidebar-profile"><div className="avatar">DK</div><div className="profile-copy"><strong>Dr. Kan</strong><span>Biotechnology Researcher</span><em className="role-chip">Researcher</em></div></div>
-          <button className="logout-btn" onClick={() => router.push("/login")}><LogOut size={16} /><span className="logout-label">Log out</span></button>
+          <div className="sidebar-profile"><div className="avatar">{initials}</div><div className="profile-copy"><strong>{displayName}</strong><span>{user?.email}</span><em className="role-chip">{user?.role}</em></div></div>
+          <button className="logout-btn" onClick={signOut}><LogOut size={16} /><span className="logout-label">Log out</span></button>
         </div>
       </aside>
 
@@ -96,8 +104,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
             <button className="icon-btn theme-button" onClick={toggleTheme} aria-label="Toggle theme">{dark ? <Sun /> : <Moon />}</button>
             <div className="relative">
-              <button className="user-menu" onClick={() => { setProfileOpen(!profileOpen); setNoticesOpen(false); }} aria-label="Open user menu"><div className="avatar">DK</div><span>Dr. Kan</span><ChevronDown size={14} /></button>
-              {profileOpen && <div className="popover" style={{ width: 220 }}><div className="popover-header"><div><strong>Dr. Kan</strong><div className="cell-sub">Researcher</div></div></div><div style={{ padding: 8 }}><Link href="/settings" className="nav-link" style={{ color: "var(--ink)" }} onClick={() => setProfileOpen(false)}><UserRound />Profile settings</Link><button className="logout-btn" style={{ color: "var(--danger)" }} onClick={() => router.push("/login")}><LogOut size={16} />Log out</button></div></div>}
+              <button className="user-menu" onClick={() => { setProfileOpen(!profileOpen); setNoticesOpen(false); }} aria-label="Open user menu"><div className="avatar">{initials}</div><span>{displayName}</span><ChevronDown size={14} /></button>
+              {profileOpen && <div className="popover" style={{ width: 220 }}><div className="popover-header"><div><strong>{displayName}</strong><div className="cell-sub">{user?.role}</div></div></div><div style={{ padding: 8 }}><Link href="/settings" className="nav-link" style={{ color: "var(--ink)" }} onClick={() => setProfileOpen(false)}><UserRound />Profile settings</Link><button className="logout-btn" style={{ color: "var(--danger)" }} onClick={signOut}><LogOut size={16} />Log out</button></div></div>}
             </div>
           </div>
         </header>

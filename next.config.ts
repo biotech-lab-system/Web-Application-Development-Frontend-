@@ -5,7 +5,7 @@ const repositoryName = "Web-Application-Development-Frontend-";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  output: isGitHubPages ? "export" : undefined,
+  output: isGitHubPages ? "export" : "standalone",
   basePath: isGitHubPages ? `/${repositoryName}` : "",
   assetPrefix: isGitHubPages ? `/${repositoryName}/` : "",
   trailingSlash: true,
