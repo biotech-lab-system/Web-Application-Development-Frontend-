@@ -83,3 +83,5 @@ docker compose config
 Every push to `main` triggers `.github/workflows/deploy-pages.yml`. Pages exports the frontend as a static site and cannot run FastAPI, PostgreSQL, or Docker. Without an externally hosted API, Login and Register deliberately show an API connection error and protected workspace pages remain inaccessible.
 
 For functional online authentication later, deploy the API and database separately and create a GitHub Actions repository variable named `NEXT_PUBLIC_API_BASE_URL` containing the public API base URL.
+
+Static preview: <https://biotech-lab-system.github.io/Web-Application-Development-Frontend-/login/>
