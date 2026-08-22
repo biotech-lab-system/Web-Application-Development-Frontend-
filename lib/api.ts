@@ -35,7 +35,9 @@ export async function apiRequest<T>(
 ): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
-  if (init.body) headers.set("Content-Type", "application/json");
+  if (init.body && !(typeof FormData !== "undefined" && init.body instanceof FormData)) {
+    headers.set("Content-Type", "application/json");
+  }
   if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
 
   let response: Response;
@@ -63,4 +65,29 @@ export async function apiRequest<T>(
 
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Something went wrong. Please try again.";
+}
+
+export async function apiDownload(path: string, accessToken: string): Promise<string> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    headers: { Authorization: `Bearer ${accessToken}`, Accept: "*/*" },
+  });
+  if (!response.ok) {
+    const body = response.headers.get("content-type")?.includes("application/json")
+      ? await response.json()
+      : null;
+    throw new ApiError(describeDetail(body?.detail) || `Download failed (${response.status})`, response.status);
+  }
+  const disposition = response.headers.get("content-disposition") || "";
+  const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  const plain = disposition.match(/filename="?([^";]+)"?/i)?.[1];
+  const filename = encoded ? decodeURIComponent(encoded) : plain || "helix-report";
+  const url = URL.createObjectURL(await response.blob());
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+  return filename;
 }

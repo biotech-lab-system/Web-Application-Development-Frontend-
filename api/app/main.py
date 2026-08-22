@@ -1,13 +1,18 @@
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
+from io import BytesIO
+import logging
 import math
 import os
 import secrets
 from typing import Any, Callable
+from urllib.parse import quote
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Response, status
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Response, UploadFile, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import func, or_, select, text
+from fastapi.responses import StreamingResponse
+from sqlalchemy import delete, func, or_, select, text
 from sqlalchemy.orm import Session
 
 from .auth import (
@@ -20,11 +25,15 @@ from .auth import (
 )
 from .db import Base, SessionLocal, engine, get_db
 from .models import (
+    AIAttachment,
+    AIConversation,
+    AIMessage,
     Booking,
     Equipment,
     Experiment,
     ExperimentMember,
     ExperimentSample,
+    GeneratedReport,
     LabNote,
     LabNoteVersion,
     RevokedToken,
@@ -33,6 +42,8 @@ from .models import (
     User,
 )
 from .schemas import (
+    AIConversationCreateIn,
+    AIConversationUpdateIn,
     BookingCreateIn,
     BookingUpdateIn,
     ChangePasswordIn,
@@ -44,12 +55,31 @@ from .schemas import (
     MemberLinkIn,
     MovementIn,
     RegisterIn,
+    ReportCreateIn,
     SampleCreateIn,
     SampleLinkIn,
     SampleUpdateIn,
     StatusIn,
     UserUpdateIn,
 )
+
+logger = logging.getLogger(__name__)
+from .ai_service import GeminiServiceError, gemini_config, generate_analysis, generate_report_summary
+from .attachment_service import (
+    ALLOWED_TYPES,
+    MAX_CONVERSATION_BYTES,
+    MAX_FILE_BYTES,
+    MAX_FILES_PER_MESSAGE,
+    MAX_MESSAGE_FILE_BYTES,
+    attachment_for_gemini,
+    read_uploads,
+    remove_conversation_files,
+    remove_file,
+    save_upload,
+    upload_for_gemini,
+)
+from .report_service import build_report_file
+from .seed_data import seed_demo_records
 
 
 PREFIX = "/api/v1"
@@ -324,6 +354,10 @@ def seed_database(db: Session) -> None:
         for index, (name, room) in enumerate(seed_equipment, start=1):
             db.add(Equipment(id=f"EQ-{index:03d}", name=name, room=room, status="Available"))
     db.commit()
+    if os.getenv("SEED_DEMO_DATA", "true").strip().lower() in {"1", "true", "yes", "on"}:
+        owner = db.scalar(select(User).order_by(User.id).limit(1))
+        if owner is not None:
+            seed_demo_records(db, owner)
 
 
 @asynccontextmanager
@@ -1277,3 +1311,505 @@ def restore_note_version(
     db.commit()
     db.refresh(note)
     return note_dict(db, note)
+
+
+# Gemini AI assistant
+def attachment_dict(attachment: AIAttachment) -> dict[str, Any]:
+    return {
+        "id": attachment.id,
+        "name": attachment.original_name,
+        "mime_type": attachment.mime_type,
+        "size_bytes": attachment.size_bytes,
+        "created_at": attachment.created_at,
+    }
+
+
+def ai_message_dict(db: Session, message: AIMessage) -> dict[str, Any]:
+    attachments = db.scalars(
+        select(AIAttachment)
+        .where(AIAttachment.message_id == message.id)
+        .order_by(AIAttachment.created_at)
+    ).all()
+    return {
+        "id": message.id,
+        "role": message.role,
+        "content": message.content,
+        "analysis": message.analysis_json,
+        "model": message.model,
+        "attachments": [attachment_dict(item) for item in attachments],
+        "created_at": message.created_at,
+    }
+
+
+def ai_conversation_dict(
+    db: Session,
+    conversation: AIConversation,
+    include_messages: bool = False,
+) -> dict[str, Any]:
+    experiment = db.get(Experiment, conversation.experiment_id) if conversation.experiment_id else None
+    message_count = db.scalar(
+        select(func.count()).select_from(AIMessage).where(AIMessage.conversation_id == conversation.id)
+    ) or 0
+    result: dict[str, Any] = {
+        "id": conversation.id,
+        "title": conversation.title,
+        "experiment_id": conversation.experiment_id,
+        "experiment_title": experiment.title if experiment else None,
+        "language": conversation.language,
+        "message_count": message_count,
+        "created_at": conversation.created_at,
+        "updated_at": conversation.updated_at,
+    }
+    if include_messages:
+        messages = db.scalars(
+            select(AIMessage)
+            .where(AIMessage.conversation_id == conversation.id)
+            .order_by(AIMessage.created_at, AIMessage.id)
+        ).all()
+        result["messages"] = [ai_message_dict(db, item) for item in messages]
+    return result
+
+
+def get_ai_conversation_or_404(db: Session, conversation_id: str, user: User) -> AIConversation:
+    conversation = db.get(AIConversation, conversation_id)
+    if conversation is None or conversation.user_id != user.id:
+        raise HTTPException(status_code=404, detail="AI conversation not found")
+    return conversation
+
+
+def build_ai_context(db: Session, conversation: AIConversation) -> dict[str, Any]:
+    if not conversation.experiment_id:
+        return {"experiment": None, "samples": [], "lab_notes": []}
+    experiment = get_experiment_or_404(db, conversation.experiment_id)
+    sample_ids = db.scalars(
+        select(ExperimentSample.sample_id).where(ExperimentSample.experiment_id == experiment.id)
+    ).all()
+    samples = [db.get(Sample, sample_id) for sample_id in sample_ids]
+    notes = db.scalars(
+        select(LabNote)
+        .where(LabNote.experiment_id == experiment.id)
+        .order_by(LabNote.updated_at.desc())
+        .limit(20)
+    ).all()
+    return jsonable_encoder({
+        "experiment": experiment_dict(db, experiment),
+        "samples": [sample_dict(db, item) for item in samples if item],
+        "lab_notes": [note_dict(db, item) for item in notes],
+    })
+
+
+@app.get(f"{PREFIX}/ai/config")
+def get_ai_config(_: User = Depends(get_current_user)) -> dict[str, Any]:
+    return {
+        **gemini_config(),
+        "allowed_mime_types": sorted(ALLOWED_TYPES),
+        "max_files_per_message": MAX_FILES_PER_MESSAGE,
+        "max_file_bytes": MAX_FILE_BYTES,
+        "max_message_file_bytes": MAX_MESSAGE_FILE_BYTES,
+        "max_conversation_bytes": MAX_CONVERSATION_BYTES,
+    }
+
+
+@app.post(f"{PREFIX}/ai/conversations", status_code=201)
+def create_ai_conversation(
+    body: AIConversationCreateIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    if body.experiment_id:
+        get_experiment_or_404(db, body.experiment_id)
+    conversation = AIConversation(
+        id=make_id(db, AIConversation, "AIC"),
+        user_id=current_user.id,
+        experiment_id=body.experiment_id,
+        title=body.title or "New analysis",
+    )
+    db.add(conversation)
+    db.commit()
+    db.refresh(conversation)
+    return ai_conversation_dict(db, conversation, include_messages=True)
+
+
+@app.get(f"{PREFIX}/ai/conversations")
+def list_ai_conversations(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    conversations = db.scalars(
+        select(AIConversation)
+        .where(AIConversation.user_id == current_user.id)
+        .order_by(AIConversation.updated_at.desc())
+    ).all()
+    return {"items": [ai_conversation_dict(db, item) for item in conversations]}
+
+
+@app.get(f"{PREFIX}/ai/conversations/{{conversation_id}}")
+def get_ai_conversation(
+    conversation_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    return ai_conversation_dict(
+        db,
+        get_ai_conversation_or_404(db, conversation_id, current_user),
+        include_messages=True,
+    )
+
+
+@app.patch(f"{PREFIX}/ai/conversations/{{conversation_id}}")
+def update_ai_conversation(
+    conversation_id: str,
+    body: AIConversationUpdateIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    conversation = get_ai_conversation_or_404(db, conversation_id, current_user)
+    fields = body.model_dump(exclude_unset=True)
+    if "experiment_id" in fields and fields["experiment_id"]:
+        get_experiment_or_404(db, fields["experiment_id"])
+    if "title" in fields:
+        conversation.title = fields["title"]
+    if "experiment_id" in fields:
+        conversation.experiment_id = fields["experiment_id"]
+    conversation.updated_at = now_utc()
+    db.commit()
+    db.refresh(conversation)
+    return ai_conversation_dict(db, conversation, include_messages=True)
+
+
+@app.delete(f"{PREFIX}/ai/conversations/{{conversation_id}}", status_code=204)
+def delete_ai_conversation(
+    conversation_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    conversation = get_ai_conversation_or_404(db, conversation_id, current_user)
+    remove_conversation_files(conversation.id)
+    message_ids = select(AIMessage.id).where(AIMessage.conversation_id == conversation.id)
+    db.execute(delete(AIAttachment).where(AIAttachment.conversation_id == conversation.id))
+    db.execute(delete(AIMessage).where(AIMessage.id.in_(message_ids)))
+    db.delete(conversation)
+    db.commit()
+    return Response(status_code=204)
+
+
+@app.post(f"{PREFIX}/ai/conversations/{{conversation_id}}/messages")
+async def create_ai_message(
+    conversation_id: str,
+    message: str = Form(min_length=1, max_length=8000),
+    files: list[UploadFile] | None = File(default=None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    conversation = get_ai_conversation_or_404(db, conversation_id, current_user)
+    loaded = await read_uploads(files or [])
+    current_bytes = db.scalar(
+        select(func.coalesce(func.sum(AIAttachment.size_bytes), 0)).where(
+            AIAttachment.conversation_id == conversation.id
+        )
+    ) or 0
+    if current_bytes + sum(item["size_bytes"] for item in loaded) > MAX_CONVERSATION_BYTES:
+        raise HTTPException(status_code=413, detail="Conversation attachment storage limit reached")
+
+    previous_messages = db.scalars(
+        select(AIMessage)
+        .where(AIMessage.conversation_id == conversation.id)
+        .order_by(AIMessage.created_at.desc(), AIMessage.id.desc())
+        .limit(19)
+    ).all()
+    history = [
+        {"role": item.role, "content": item.content}
+        for item in reversed(previous_messages)
+    ] + [{"role": "user", "content": message.strip()}]
+    gemini_attachments = [upload_for_gemini(item) for item in loaded]
+    remaining_bytes = MAX_MESSAGE_FILE_BYTES - sum(item["size_bytes"] for item in loaded)
+    if remaining_bytes > 0 and not loaded:
+        previous_files = db.scalars(
+            select(AIAttachment)
+            .where(AIAttachment.conversation_id == conversation.id)
+            .order_by(AIAttachment.created_at.desc())
+            .limit(MAX_FILES_PER_MESSAGE)
+        ).all()
+        for attachment in previous_files:
+            if attachment.size_bytes > remaining_bytes:
+                continue
+            gemini_attachments.append(attachment_for_gemini(
+                conversation.id,
+                attachment.stored_name,
+                attachment.mime_type,
+                attachment.original_name,
+            ))
+            remaining_bytes -= attachment.size_bytes
+
+    try:
+        analysis, model = generate_analysis(history, build_ai_context(db, conversation), gemini_attachments)
+    except GeminiServiceError as error:
+        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+
+    saved_files: list[tuple[str, str]] = []
+    try:
+        user_message = AIMessage(
+            conversation_id=conversation.id,
+            role="user",
+            content=message.strip(),
+        )
+        db.add(user_message)
+        db.flush()
+        for item in loaded:
+            stored_name, path = save_upload(conversation.id, item)
+            saved_files.append((stored_name, path))
+            db.add(AIAttachment(
+                id=make_id(db, AIAttachment, "ATT"),
+                conversation_id=conversation.id,
+                message_id=user_message.id,
+                original_name=item["name"],
+                stored_name=stored_name,
+                mime_type=item["mime_type"],
+                size_bytes=item["size_bytes"],
+            ))
+        assistant_message = AIMessage(
+            conversation_id=conversation.id,
+            role="assistant",
+            content=analysis.answer,
+            analysis_json=analysis.model_dump(),
+            model=model,
+        )
+        db.add(assistant_message)
+        if conversation.title == "New analysis":
+            conversation.title = message.strip()[:72]
+        conversation.updated_at = now_utc()
+        db.commit()
+        db.refresh(user_message)
+        db.refresh(assistant_message)
+    except Exception:
+        db.rollback()
+        for stored_name, _ in saved_files:
+            remove_file(conversation.id, stored_name)
+        raise
+    return {
+        "conversation": ai_conversation_dict(db, conversation),
+        "user_message": ai_message_dict(db, user_message),
+        "assistant_message": ai_message_dict(db, assistant_message),
+    }
+
+
+# Persisted PDF/XLSX reports
+def generated_report_dict(report: GeneratedReport) -> dict[str, Any]:
+    return {
+        "id": report.id,
+        "title": report.title,
+        "report_type": report.report_type,
+        "format": report.format,
+        "language": report.language,
+        "experiment_id": report.experiment_id,
+        "sample_ids": report.sample_ids or [],
+        "date_from": report.date_from,
+        "date_to": report.date_to,
+        "include_ai": report.include_ai,
+        "status": report.status,
+        "ai_status": report.ai_status,
+        "error_message": report.error_message,
+        "created_by_id": report.created_by_id,
+        "created_at": report.created_at,
+        "updated_at": report.updated_at,
+    }
+
+
+def get_generated_report_or_404(db: Session, report_id: str, user: User) -> GeneratedReport:
+    report = db.get(GeneratedReport, report_id)
+    if report is None or (report.created_by_id != user.id and user.role != "Lab Manager"):
+        raise HTTPException(status_code=404, detail="Report not found")
+    return report
+
+
+def report_default_title(report_type: str, experiment: Experiment | None, language: str) -> str:
+    names = {
+        "en": {
+            "experiment_summary": "Experiment Summary",
+            "sample_inventory": "Sample Inventory",
+            "quality_control": "Quality Control Report",
+        },
+        "th": {
+            "experiment_summary": "สรุปการทดลอง",
+            "sample_inventory": "รายงานคลังตัวอย่าง",
+            "quality_control": "รายงานควบคุมคุณภาพ",
+        },
+    }
+    base = names[language][report_type]
+    return f"{base} — {experiment.title}" if experiment else base
+
+
+def build_report_snapshot(
+    db: Session,
+    body: ReportCreateIn,
+    current_user: User,
+) -> tuple[dict[str, Any], Experiment | None]:
+    experiment = get_experiment_or_404(db, body.experiment_id) if body.experiment_id else None
+    selected_ids = list(dict.fromkeys(body.sample_ids))
+    if not selected_ids and experiment:
+        selected_ids = list(db.scalars(
+            select(ExperimentSample.sample_id).where(ExperimentSample.experiment_id == experiment.id)
+        ).all())
+    statement = select(Sample).order_by(Sample.collection_date.desc(), Sample.id)
+    if selected_ids:
+        statement = statement.where(Sample.id.in_(selected_ids))
+    if body.date_from:
+        statement = statement.where(Sample.collection_date >= body.date_from)
+    if body.date_to:
+        statement = statement.where(Sample.collection_date <= body.date_to)
+    samples = list(db.scalars(statement).all())
+    if selected_ids:
+        found = {item.id for item in samples}
+        missing = [item for item in selected_ids if item not in found]
+        if missing:
+            raise HTTPException(status_code=404, detail=f"Samples not found in selected scope: {', '.join(missing)}")
+
+    notes: list[LabNote] = []
+    if experiment:
+        notes = list(db.scalars(
+            select(LabNote)
+            .where(LabNote.experiment_id == experiment.id)
+            .order_by(LabNote.updated_at.desc())
+        ).all())
+    movements = list(db.scalars(
+        select(SampleMovement)
+        .where(SampleMovement.sample_id.in_([item.id for item in samples]))
+        .order_by(SampleMovement.moved_at.desc())
+    ).all()) if samples else []
+
+    quality_exceptions: list[str] = []
+    for sample in samples:
+        if sample.status == "Quarantined":
+            quality_exceptions.append(f"{sample.id}: sample is quarantined")
+        missing_fields = [
+            name for name, value in {
+                "name": sample.name,
+                "type": sample.type,
+                "collection date": sample.collection_date,
+                "location": sample.location,
+                "temperature": sample.temperature,
+            }.items() if value is None or str(value).strip() == ""
+        ]
+        if missing_fields:
+            quality_exceptions.append(f"{sample.id}: missing {', '.join(missing_fields)}")
+
+    snapshot = jsonable_encoder({
+        "generated_at": now_utc(),
+        "generated_by": current_user.display_name,
+        "experiment": experiment_dict(db, experiment) if experiment else None,
+        "samples": [sample_dict(db, item) for item in samples],
+        "lab_notes": [note_dict(db, item) for item in notes],
+        "movements": [movement_dict(db, item) for item in movements],
+        "quality_exceptions": quality_exceptions,
+    })
+    return snapshot, experiment
+
+
+@app.post(f"{PREFIX}/reports", status_code=201)
+def create_report(
+    body: ReportCreateIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    snapshot, experiment = build_report_snapshot(db, body, current_user)
+    report = GeneratedReport(
+        id=make_id(db, GeneratedReport, "RPT"),
+        created_by_id=current_user.id,
+        title=body.title or report_default_title(body.report_type, experiment, body.language),
+        report_type=body.report_type,
+        format=body.format,
+        language=body.language,
+        experiment_id=body.experiment_id,
+        sample_ids=[item["id"] for item in snapshot["samples"]],
+        date_from=body.date_from,
+        date_to=body.date_to,
+        include_ai=body.include_ai,
+        status="Generating",
+        snapshot_json=snapshot,
+    )
+    db.add(report)
+    db.commit()
+    db.refresh(report)
+    if body.include_ai:
+        try:
+            report.ai_summary = generate_report_summary(snapshot, body.language)
+            report.ai_status = "Completed"
+        except GeminiServiceError as error:
+            report.ai_status = "Failed"
+            report.error_message = str(error)
+    else:
+        report.ai_status = "Not included"
+    try:
+        build_report_file({
+            **generated_report_dict(report),
+            "snapshot": report.snapshot_json,
+            "ai_summary": report.ai_summary,
+        })
+        report.status = "Completed"
+    except Exception as error:
+        logger.exception("Failed to render report %s", report.id)
+        report.status = "Failed"
+        report.error_message = "Report rendering failed"
+        db.commit()
+        raise HTTPException(status_code=500, detail="Report rendering failed") from error
+    db.commit()
+    db.refresh(report)
+    return generated_report_dict(report)
+
+
+@app.get(f"{PREFIX}/reports")
+def list_reports(
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    statement = select(GeneratedReport).order_by(GeneratedReport.created_at.desc())
+    if current_user.role != "Lab Manager":
+        statement = statement.where(GeneratedReport.created_by_id == current_user.id)
+    return paginate(db, statement, page, limit, generated_report_dict)
+
+
+@app.get(f"{PREFIX}/reports/{{report_id}}")
+def get_report(
+    report_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    return generated_report_dict(get_generated_report_or_404(db, report_id, current_user))
+
+
+@app.get(f"{PREFIX}/reports/{{report_id}}/download")
+def download_report(
+    report_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    report = get_generated_report_or_404(db, report_id, current_user)
+    if report.status != "Completed" or not report.snapshot_json:
+        raise HTTPException(status_code=409, detail="Report is not ready for download")
+    data, mime_type, filename = build_report_file({
+        **generated_report_dict(report),
+        "snapshot": report.snapshot_json,
+        "ai_summary": report.ai_summary,
+    })
+    return StreamingResponse(
+        BytesIO(data),
+        media_type=mime_type,
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}",
+            "Content-Length": str(len(data)),
+        },
+    )
+
+
+@app.delete(f"{PREFIX}/reports/{{report_id}}", status_code=204)
+def delete_report(
+    report_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    report = get_generated_report_or_404(db, report_id, current_user)
+    db.delete(report)
+    db.commit()
+    return Response(status_code=204)

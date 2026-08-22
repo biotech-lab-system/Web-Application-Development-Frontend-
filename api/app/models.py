@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base
@@ -151,3 +151,77 @@ class LabNoteVersion(Base):
     content: Mapped[str] = mapped_column(Text)
     created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class AIConversation(Base):
+    __tablename__ = "ai_conversations"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    experiment_id: Mapped[str | None] = mapped_column(
+        ForeignKey("experiments.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    title: Mapped[str] = mapped_column(String(180), default="New analysis")
+    language: Mapped[str] = mapped_column(String(16), default="auto")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
+class AIMessage(Base):
+    __tablename__ = "ai_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    conversation_id: Mapped[str] = mapped_column(
+        ForeignKey("ai_conversations.id", ondelete="CASCADE"), index=True
+    )
+    role: Mapped[str] = mapped_column(String(16))
+    content: Mapped[str] = mapped_column(Text)
+    analysis_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    model: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class AIAttachment(Base):
+    __tablename__ = "ai_attachments"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    conversation_id: Mapped[str] = mapped_column(
+        ForeignKey("ai_conversations.id", ondelete="CASCADE"), index=True
+    )
+    message_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ai_messages.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    original_name: Mapped[str] = mapped_column(String(255))
+    stored_name: Mapped[str] = mapped_column(String(80), unique=True)
+    mime_type: Mapped[str] = mapped_column(String(120))
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class GeneratedReport(Base):
+    __tablename__ = "reports"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    title: Mapped[str] = mapped_column(String(180))
+    report_type: Mapped[str] = mapped_column(String(40), index=True)
+    format: Mapped[str] = mapped_column(String(8))
+    language: Mapped[str] = mapped_column(String(8), default="en")
+    experiment_id: Mapped[str | None] = mapped_column(
+        ForeignKey("experiments.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    sample_ids: Mapped[list] = mapped_column(JSON, default=list)
+    date_from: Mapped[date | None] = mapped_column(Date, nullable=True)
+    date_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    include_ai: Mapped[bool] = mapped_column(Boolean, default=True)
+    status: Mapped[str] = mapped_column(String(20), default="Generating", index=True)
+    snapshot_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    ai_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ai_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
+    )
