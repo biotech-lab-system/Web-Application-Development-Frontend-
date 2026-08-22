@@ -6,8 +6,10 @@ import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, Res
 import { AlertTriangle, ArrowRight, Beaker, CalendarClock, CheckCircle2, ClipboardCheck, FlaskConical, Microscope, PackageOpen, TestTubes, ThermometerSun } from "lucide-react";
 import { bookings, chartData, chemicals, experiments, notifications, samples, tasks as initialTasks } from "@/data/mock";
 import { Badge, PageHeader, StatCard, StatusBadge, Toast } from "@/components/ui";
+import { useAuth } from "@/components/auth-provider";
 
 export default function DashboardPage() {
+  const { user } = useAuth();
   const [tasks, setTasks] = useState(initialTasks);
   const [toast, setToast] = useState(false);
   const toggleTask = (id: string) => {
@@ -16,7 +18,7 @@ export default function DashboardPage() {
   };
   return (
     <div className="page">
-      <PageHeader eyebrow="Saturday, July 18" title="Good morning, Dr. Kan" description="Here’s the pulse of Molecular Biotechnology Lab today." actions={<><Link className="btn btn-secondary" href="/reports">View reports</Link><Link className="btn btn-primary" href="/samples">Register sample <ArrowRight /></Link></>} />
+      <PageHeader eyebrow="Saturday, July 18" title={`Good morning, ${user?.display_name || user?.username || "researcher"}`} description="Here’s the pulse of Molecular Biotechnology Lab today." actions={<><Link className="btn btn-secondary" href="/reports">View reports</Link><Link className="btn btn-primary" href="/samples">Register sample <ArrowRight /></Link></>} />
       <section className="stat-grid">
         <StatCard icon={<TestTubes />} value="2,847" label="Active samples" trend="+12.4%" />
         <StatCard icon={<FlaskConical />} value="8" label="Active experiments" trend="2 due soon" />

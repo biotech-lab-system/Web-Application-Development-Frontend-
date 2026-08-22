@@ -1,15 +1,73 @@
-# Helix Lab — Laboratory Management Frontend
+# Helix Lab — Laboratory Management System
 
-Frontend prototype for a modern biotechnology laboratory management system. Built with Next.js, TypeScript, Tailwind CSS, Lucide, and Recharts using mock data and local UI state only.
+Full-stack biotechnology laboratory workspace built with Next.js, TypeScript, FastAPI, and PostgreSQL. Authentication supports account registration, login, persistent or browser-session sign-in, protected workspace routes, and token revocation on logout.
 
-## Local development
+## Run the full stack with Docker
+
+Docker Desktop must be running. From the repository root:
 
 ```powershell
+docker compose up --build
+```
+
+Services are available at:
+
+- Web application: <http://localhost:3000/login>
+- REST API: <http://localhost:8000>
+- Interactive API documentation: <http://localhost:8000/docs>
+- PostgreSQL: `localhost:5432`
+
+The default development manager account is:
+
+```text
+Username: admin
+Email: admin@helixlab.io
+Password: Admin123!
+```
+
+Override the development defaults with a local `.env` file:
+
+```dotenv
+WEB_PORT=3000
+API_PORT=8000
+POSTGRES_PORT=5432
+POSTGRES_DB=helixlab
+POSTGRES_USER=helix
+POSTGRES_PASSWORD=replace-me
+JWT_SECRET_KEY=replace-with-a-long-random-secret
+JWT_EXPIRE_MINUTES=60
+CORS_ORIGINS=http://localhost:3000
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
+SEED_ADMIN_USERNAME=admin
+SEED_ADMIN_EMAIL=admin@helixlab.io
+SEED_ADMIN_PASSWORD=replace-me
+```
+
+The API URL is compiled into the frontend image because `NEXT_PUBLIC_*` variables are browser-visible build-time values. It must be a URL the user's browser can reach; do not set it to the Compose service name `api`.
+
+To stop containers while keeping database data:
+
+```powershell
+docker compose down
+```
+
+To remove the PostgreSQL volume as well:
+
+```powershell
+docker compose down --volumes
+```
+
+## Local frontend development
+
+Run PostgreSQL and the API through Docker, then run Next.js with hot reload:
+
+```powershell
+docker compose up db api
 npm install
 npm run dev -- -p 3001
 ```
 
-Open <http://localhost:3001/login>.
+The default API CORS configuration allows both ports 3000 and 3001.
 
 ## Checks
 
@@ -17,30 +75,13 @@ Open <http://localhost:3001/login>.
 npm run typecheck
 npm run lint
 npm run build
+docker compose config
 ```
 
-## REST API (Core MVP)
+## GitHub Pages
 
-The backend implementation lives in `api/` and runs with a PostgreSQL container through
-Docker Compose. Compose provides development defaults; set local values in `.env` when
-you need to override them.
+Every push to `main` triggers `.github/workflows/deploy-pages.yml`. Pages exports the frontend as a static site and cannot run FastAPI, PostgreSQL, or Docker. Without an externally hosted API, Login and Register deliberately show an API connection error and protected workspace pages remain inaccessible.
 
-```powershell
-docker compose up --build
-```
+For functional online authentication later, deploy the API and database separately and create a GitHub Actions repository variable named `NEXT_PUBLIC_API_BASE_URL` containing the public API base URL.
 
-The API is available at <http://localhost:8000> and interactive documentation is at
-<http://localhost:8000/docs>. The default development seed account is controlled by
-`SEED_ADMIN_USERNAME`, `SEED_ADMIN_EMAIL`, and `SEED_ADMIN_PASSWORD` in `.env`.
-
-To stop the services while keeping the database volume:
-
-```powershell
-docker compose down
-```
-
-## Deployment
-
-Every push to `main` triggers the GitHub Pages workflow in `.github/workflows/deploy-pages.yml`.
-
-https://biotech-lab-system.github.io/Web-Application-Development-Frontend-/login/
+Static preview: <https://biotech-lab-system.github.io/Web-Application-Development-Frontend-/login/>

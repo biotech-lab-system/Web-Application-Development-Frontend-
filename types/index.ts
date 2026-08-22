@@ -72,3 +72,36 @@ export interface AuditLog {
   date: string;
   category: string;
 }
+
+export type UserRole = "Lab Manager" | "Researcher" | "Viewer";
+
+export interface AuthUser {
+  id: number;
+  username: string;
+  email: string;
+  display_name: string;
+  role: UserRole;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AuthSession {
+  accessToken: string;
+  expiresAt: string;
+  user: AuthUser;
+  persistent: boolean;
+}
+
+export interface LoginInput {
+  identifier: string;
+  password: string;
+}
+
+export interface RegisterInput {
+  display_name: string;
+  username: string;
+  email: string;
+  password: string;
+  role: Extract<UserRole, "Researcher" | "Viewer">;
+}
